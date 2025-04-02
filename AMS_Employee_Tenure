@@ -1,0 +1,173 @@
+#%%
+import mysql.connector
+import pandas as pd
+import warnings
+import datetime
+import numpy as np
+warnings.filterwarnings("ignore")
+pd.set_option('display.max_columns', None)
+from sqlalchemy import create_engine
+conn = mysql.connector.connect(user=config.User, database=config.db,
+                               password=config.Password,
+                               host=config.host,
+                               port=config.port)
+cursor = conn.cursor()
+query = "select * from AMS_DATAMART.POP_Data ;"
+df_headcount= pd.read_sql(query, con=conn)
+df_headcount.columns
+# %%
+df_headcount
+#%%
+df_headcount['Consolidated_Aadhaar'] = df_headcount['Aadhaar_Number'].fillna(df_headcount['oms_uid_number'])
+
+#%%
+#%%
+unique_aadhar = df_headcount['Consolidated_Aadhaar'].dropna().astype(str).unique()
+# %%
+unique_count = df_headcount['Consolidated_Aadhaar'].nunique()
+print("Count of unique Aadhaar numbers:", unique_count)
+# %%
+offer_counts = df_headcount.groupby('Consolidated_Aadhaar').agg(Unique_Offer_Count=('Offer_Id', 'nunique')).reset_index()
+offer_counts
+# %%
+df_headcount['Offer_Count'] = df_headcount.groupby('Consolidated_Aadhaar')['Offer_Id'].transform('nunique')
+# %%
+df_headcount.to_csv('employee.csv')
+# %%
+df_employee_data = pd.read_csv(r'Emp_mastr_data.csv', encoding='ISO-8859-1')
+#df_filtered = df_headcount[df_headcount['Offer_Count'] > 1]
+#df_filtered.to_excel('offer_id.xlsx')
+#%%
+#df_employee_data = pd.read_csv(r'D:\adhoc\ActiveMembers_28012025052704\AMS_employee\Emp_mastr_data.csv', encoding='ISO-8859-1')
+#%%
+df_employee_data
+# %%
+common_offers = df_headcount[df_headcount['Offer_Id'].isin(df_employee_data['Deputee_Id'])]
+print(common_offers)
+# %%
+#df_headcount['Offer_Date'] = pd.to_datetime(df_headcount['Created_Date'], errors='coerce')
+#common_offers_nov = common_offers[common_offers['Created_Date'].dt.month == 11]
+#print(common_offers_nov)
+# %%
+result = common_offers.merge(df_employee_data, left_on='Offer_Id', right_on='Deputee_Id', how='left')
+# %%
+result
+# %%
+data=result['Employee_Code']
+
+# %%
+conn1 = mysql.connector.connect(user=config.user, database=config.db,
+                               password=config.password,
+                               host=config.host,
+                               port=config.port)
+cursor = conn1.cursor()
+query1 = "select * from Payroll_Datamart.`QMR.Terrier_QPAY_Quaterly` where StartOfMonth >='2024-10-01 00:00:00' ;"
+df_emp_data= pd.read_sql(query1, con=conn1)
+#%%
+df_emp_data.columns
+# %%
+type(data)
+# %%
+df_emp_data['Employee_Code'] = df_emp_data['Employee_Code'].astype(str)
+data = data.astype(str)
+#%%
+df_emp_data['Employee_Code'] = df_emp_data['Employee_Code'].str.strip()
+data = data.str.strip()
+#%%
+matching_codes = set(df_emp_data['Employee_Code']).intersection(set(data))
+# %%
+matching_size = len(matching_codes)
+matching_size
+# %%
+matching_df = df_emp_data[df_emp_data['Employee_Code'].isin(matching_codes)]
+# %%
+matching_df['DATE_OF_JOINING'] = pd.to_datetime(matching_df['DATE_OF_JOINING'], dayfirst=True, errors='coerce')
+matching_df['StartOfMonth'] = pd.to_datetime(matching_df['StartOfMonth'], dayfirst=True, errors='coerce')
+#%%
+matching_df['LastPayMonth'] = matching_df.groupby('Employee_Code')['StartOfMonth'].transform('max')
+# %%
+matching_df['PayPeriodCount'] = matching_df.groupby('Employee_Code')['StartOfMonth'].transform('count')
+# %%
+matching_df.to_csv('data_paycount.csv')
+# %%
+matching_df.columns
+# %%
+df_employee_sal_nov = pd.read_excel(r'C:\Users\sephali.panda\Downloads\extraction_folder\Sephali\nov24.xlsb')
+df_employee_sal_nov
+#%%
+df_employee_sal_oct=pd.read_excel(r'C:\Users\sephali.panda\Downloads\extraction_folder\Sephali\oct24.xlsb')
+df_employee_sal_oct
+#%%
+df_employee_sal_nov['Employee_Code'] = df_employee_sal_nov['Employee_Code'].astype(str)
+df_employee_sal_oct['Employee_Code'] = df_employee_sal_oct['Employee_Code'].astype(str)
+#%%
+matching_codes_nov = matching_df.merge(df_employee_sal_nov, on='Employee_Code', how='inner')
+matching_codes_oct = matching_df.merge(df_employee_sal_oct, on='Employee_Code', how='inner')
+
+# %%
+matching_codes_nov = matching_codes_nov.loc[:, ~matching_codes_nov.columns.duplicated()]
+# %%
+matching_codes_oct= matching_codes_oct.loc[:, ~matching_codes_oct.columns.duplicated()]
+# %%
+matching_codes_nov.columns
+# %%
+columns_to_drop_oct= ['Group_Name_y','WBS_Name_y',
+                              'Entity_Name_y',
+                              'Company_Code_y',
+                              'Gender_y',
+                              'Pay_Period_y',
+                              'Segment_Name_y',
+                              'Region_Name_y',
+                              'Designation_Name_y',
+                              'ProcessType_y']
+
+df_oct = matching_codes_oct.drop(columns_to_drop_oct, axis=1)
+# %%
+df_oct
+# %%
+columns_to_drop_nov= ['Group_Name_y','WBS_Name_y',
+                              'Entity_Name_y',
+                              'Company_Code_y',
+                              'Gender_y',
+                              'Pay_Period_y',
+                              'Segment_Name_y',
+                              'Region_Name_y',
+                              'Designation_Name_y',
+                              'ProcessType_y']
+
+df_nov = matching_codes_nov.drop(columns_to_drop_nov, axis=1)
+# %%
+df_nov
+# %%
+merged_df = pd.merge(df_oct, df_nov, on='Employee_Code', suffixes=('_df1', '_df2'))
+#%%
+merged_df['Net_Pay_Difference'] = merged_df['NETPAY_df1'] - merged_df['NETPAY_df2']
+# %%
+merged_df['Net_Pay_Difference']
+# %%
+merged_df.columns
+# %%
+columns_to_drop_nov= ['DATE_OF_JOINING_df2', 'Age_df2',
+       'StartOfMonth_df2', 'PT_State_df2', 'Work_Location_df2', 'PF_df2',
+       'ESI_df2', 'PT_df2', 'EDLIC_df2', 'LWF_df2', 'UAN_Type_df2',
+       'Region_Name_x_df2', 'Employee_Current_Status_df2', 'Employee_Name_df2',
+       'Company_Name_df2', 'Zone_df2', 'Sector_df2', 'LWD_df2',
+       'Payroll_Run_date_df2', 'New_Deletion_df2', 'Designation_Name_x_df2',
+       'ProcessType_x_df2', 'Addition_df2', 'Group_Name_x_df2',
+       'WBS_Name_x_df2', 'Sap_Customer_Code_df2', 'LastPayMonth_df2',
+       'PayPeriodCount_df2', 'Deputee_Id_df2', 'DATE OF JOINING_df2',
+       'PT State_df2', 'Work Location_df2','Entity_Name_x_df2', 'Company_Code_x_df2',
+       'Gender_x_df2', 'Gender1_df2', 'Pay_Period_x_df2', 'Hiring_Status_df2',
+       'Segment_Name_x_df2', 'ISFMP_df2', 'New_Addition_df2','Last_Working_Day_df2','CTC_df2', 'ARREAR CTC_df2', 'EARNED_GROSS_df2',
+       'FIXED_GROSS_df2', 'ARREAR NETPAY_df2',
+       'TOTAL DEDUCTION_df2', 'ARREAR TOTAL DEDUCTION_df2']
+
+merged_df= merged_df.drop(columns_to_drop_nov, axis=1)
+
+# %%
+merged_df = merged_df.drop_duplicates(keep='first')
+# %%
+merged_df.to_csv('sal_diff1.csv')
+
+
+# %%
